@@ -27,6 +27,7 @@ from telegram.ext import (
 import yt_dlp
 from video_upload_handler import handle_video_upload
 from file_link_handler import handle_file_link
+from piped_downloader import download_youtube_video as piped_download
 
 # Configure logging
 logging.basicConfig(
@@ -448,9 +449,47 @@ async def handle_youtube_url(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
 
 
+def download_video_with_ytdlp_sync(youtube_id: str, url: str) -> tuple:
+    """
+    Download video using yt-dlp (fallback method) - synchronous version
+    
+    Returns:
+        Tuple of (downloaded_file_path, title, description, duration, thumbnail) or raises exception
+    """
+    output_path = os.path.join(DOWNLOAD_PATH, f"{youtube_id}.%(ext)s")
+    cookies_path = os.path.join(os.path.dirname(__file__), 'youtube_cookies.txt')
+    
+    ydl_opts = {
+        'outtmpl': output_path,
+        'quiet': False,
+        'no_warnings': False,
+        'cookiefile': cookies_path if os.path.exists(cookies_path) else None,
+        'verbose': True,
+        'listformats': False,
+    }
+    
+    logger.info(f"yt-dlp fallback: Using cookies file: {cookies_path if os.path.exists(cookies_path) else 'None'}")
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        
+        title = info.get('title', 'Unknown Title')
+        description = info.get('description', '')
+        duration = info.get('duration', 0)
+        thumbnail = info.get('thumbnail', '')
+        downloaded_file = ydl.prepare_filename(info)
+        
+        return downloaded_file, title, description, duration, thumbnail
+
+
 async def download_video(queue_id: int, user_id: int, url: str, youtube_id: str, 
                         status_message, context: ContextTypes.DEFAULT_TYPE):
-    """Download video using yt-dlp"""
+    """
+    Download video using Piped API (primary) with yt-dlp fallback
+    
+    Piped API is a privacy-friendly YouTube frontend that bypasses YouTube's blocking.
+    If Piped fails, falls back to yt-dlp.
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -465,42 +504,66 @@ async def download_video(queue_id: int, user_id: int, url: str, youtube_id: str,
         # Update status message
         await status_message.edit_text(
             "📥 Downloading video...\n\n"
-            "This may take a few minutes depending on video length."
+            "Using fast download method. This usually takes 1-2 minutes."
         )
         
-        # Configure yt-dlp
-        output_path = os.path.join(DOWNLOAD_PATH, f"{youtube_id}.%(ext)s")
-        cookies_path = os.path.join(os.path.dirname(__file__), 'youtube_cookies.txt')
+        downloaded_file = None
+        title = None
+        description = None
+        duration = None
+        thumbnail = None
+        download_method = None
         
-        ydl_opts = {
-            # Don't specify format - let yt-dlp choose the best
-            'outtmpl': output_path,
-            'quiet': False,
-            'no_warnings': False,
-            'cookiefile': cookies_path if os.path.exists(cookies_path) else None,
-            'verbose': True,  # Enable verbose logging
-            'listformats': False,  # Don't list formats, just download
-        }
-        
-        logger.info(f"Using cookies file: {cookies_path if os.path.exists(cookies_path) else 'None'}")
-        
-        # Download video and get info
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+        # Try Piped API first (faster and more reliable)
+        try:
+            logger.info(f"Attempting download via Piped API for {youtube_id}")
             
-            title = info.get('title', 'Unknown Title')
-            description = info.get('description', '')
-            duration = info.get('duration', 0)
-            thumbnail = info.get('thumbnail', '')
+            file_path, metadata = await piped_download(youtube_id, DOWNLOAD_PATH)
             
-            # Get actual downloaded file
-            downloaded_file = ydl.prepare_filename(info)
-            file_size = os.path.getsize(downloaded_file)
+            if file_path and metadata:
+                downloaded_file = file_path
+                title = metadata.get('title', 'Unknown Title')
+                description = metadata.get('description', '')
+                duration = metadata.get('duration', 0)
+                thumbnail = metadata.get('thumbnail', '')
+                download_method = "Piped API"
+                logger.info(f"Piped API download successful: {title}")
+            else:
+                logger.warning("Piped API returned no file, falling back to yt-dlp")
+                
+        except Exception as piped_error:
+            logger.warning(f"Piped API failed: {piped_error}, falling back to yt-dlp")
         
-        # TODO: Upload to S3 storage
-        # For now, we'll store file path (in production, upload to S3)
+        # Fallback to yt-dlp if Piped failed
+        if not downloaded_file:
+            try:
+                await status_message.edit_text(
+                    "📥 Downloading video...\n\n"
+                    "Using alternative download method. This may take a few minutes."
+                )
+                
+                logger.info(f"Attempting download via yt-dlp for {youtube_id}")
+                # Run synchronous yt-dlp in executor to not block event loop
+                loop = asyncio.get_event_loop()
+                downloaded_file, title, description, duration, thumbnail = await loop.run_in_executor(
+                    None,
+                    download_video_with_ytdlp_sync,
+                    youtube_id,
+                    url
+                )
+                download_method = "yt-dlp"
+                logger.info(f"yt-dlp download successful: {title}")
+                
+            except Exception as ytdlp_error:
+                logger.error(f"yt-dlp also failed: {ytdlp_error}")
+                raise Exception(f"All download methods failed. Piped API and yt-dlp both encountered errors.")
+        
+        # Get file size
+        file_size = os.path.getsize(downloaded_file)
+        
+        # File key and URL for storage
         file_key = f"videos/{user_id}/{youtube_id}.mp4"
-        file_url = f"/api/videos/stream/{youtube_id}"  # Temporary local streaming
+        file_url = f"/api/videos/stream/{youtube_id}"
         
         # Create video record
         cursor.execute(
@@ -525,11 +588,12 @@ async def download_video(queue_id: int, user_id: int, url: str, youtube_id: str,
         conn.close()
         
         # Update status message
-        duration_str = f"{duration // 60}:{duration % 60:02d}"
+        duration_str = f"{duration // 60}:{duration % 60:02d}" if duration else "N/A"
         await status_message.edit_text(
             f"✅ **Download Complete!**\n\n"
             f"📹 {title}\n"
-            f"⏱ Duration: {duration_str}\n\n"
+            f"⏱ Duration: {duration_str}\n"
+            f"📦 Method: {download_method}\n\n"
             f"🚗 Open {WEB_APP_URL} in your Tesla to watch!"
         )
         
