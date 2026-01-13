@@ -13,62 +13,66 @@ var UNAUTHED_ERR_MSG = "Please login (10001)";
 var NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
 
 // server/db.ts
-import { eq, desc, and } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 
-// drizzle/schema.ts
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, bigint, boolean } from "drizzle-orm/mysql-core";
-var users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+// drizzle/schema.postgres.ts
+import { integer, pgEnum, pgTable, text, timestamp, varchar, bigint, boolean } from "drizzle-orm/pg-core";
+var roleEnum = pgEnum("role", ["user", "admin"]);
+var videoStatusEnum = pgEnum("video_status", ["downloading", "ready", "failed"]);
+var downloadStatusEnum = pgEnum("download_status", ["pending", "processing", "completed", "failed"]);
+var users = pgTable("users", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  openId: varchar("open_id", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull()
+  loginMethod: varchar("login_method", { length: 64 }),
+  role: roleEnum("role").default("user").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  lastSignedIn: timestamp("last_signed_in").defaultNow().notNull()
 });
-var telegramSessions = mysqlTable("telegram_sessions", {
-  id: int("id").autoincrement().primaryKey(),
-  authToken: varchar("authToken", { length: 64 }).notNull().unique(),
-  telegramUserId: bigint("telegramUserId", { mode: "number" }),
-  telegramUsername: varchar("telegramUsername", { length: 255 }),
-  userId: int("userId").references(() => users.id),
+var telegramSessions = pgTable("telegram_sessions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  authToken: varchar("auth_token", { length: 64 }).notNull().unique(),
+  telegramUserId: bigint("telegram_user_id", { mode: "number" }),
+  telegramUsername: varchar("telegram_username", { length: 255 }),
+  userId: integer("user_id").references(() => users.id),
   verified: boolean("verified").default(false).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  expiresAt: timestamp("expiresAt").notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull()
 });
-var videos = mysqlTable("videos", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().references(() => users.id),
-  youtubeId: varchar("youtubeId", { length: 64 }).notNull(),
+var videos = pgTable("videos", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  youtubeId: varchar("youtube_id", { length: 64 }).notNull(),
   title: text("title").notNull(),
   description: text("description"),
-  thumbnailUrl: text("thumbnailUrl"),
-  duration: int("duration"),
+  thumbnailUrl: text("thumbnail_url"),
+  duration: integer("duration"),
   // Duration in seconds
-  fileKey: text("fileKey").notNull(),
+  fileKey: text("file_key").notNull(),
   // S3 file key
-  fileUrl: text("fileUrl").notNull(),
+  fileUrl: text("file_url").notNull(),
   // S3 URL
-  fileSize: bigint("fileSize", { mode: "number" }),
+  fileSize: bigint("file_size", { mode: "number" }),
   // File size in bytes
-  mimeType: varchar("mimeType", { length: 100 }),
-  status: mysqlEnum("status", ["downloading", "ready", "failed"]).default("downloading").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+  mimeType: varchar("mime_type", { length: 100 }),
+  status: videoStatusEnum("status").default("downloading").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
-var downloadQueue = mysqlTable("download_queue", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().references(() => users.id),
-  youtubeUrl: text("youtubeUrl").notNull(),
-  youtubeId: varchar("youtubeId", { length: 64 }).notNull(),
-  status: mysqlEnum("status", ["pending", "processing", "completed", "failed"]).default("pending").notNull(),
-  errorMessage: text("errorMessage"),
-  videoId: int("videoId").references(() => videos.id),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+var downloadQueue = pgTable("download_queue", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  youtubeUrl: text("youtube_url").notNull(),
+  youtubeId: varchar("youtube_id", { length: 64 }).notNull(),
+  status: downloadStatusEnum("status").default("pending").notNull(),
+  errorMessage: text("error_message"),
+  videoId: integer("video_id").references(() => videos.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 
 // server/_core/env.ts
@@ -84,11 +88,13 @@ var ENV = {
 };
 
 // server/db.ts
+import { and, desc } from "drizzle-orm";
 var _db = null;
 async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const client = postgres(process.env.DATABASE_URL);
+      _db = drizzle(client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -136,7 +142,8 @@ async function upsertUser(user) {
     if (Object.keys(updateSet).length === 0) {
       updateSet.lastSignedIn = /* @__PURE__ */ new Date();
     }
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet
     });
   } catch (error) {
@@ -183,8 +190,8 @@ async function deleteVideo(videoId, userId) {
 async function createDownloadRequest(request) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(downloadQueue).values(request);
-  return result[0].insertId;
+  const result = await db.insert(downloadQueue).values(request).returning({ id: downloadQueue.id });
+  return result[0].id;
 }
 
 // server/_core/cookies.ts

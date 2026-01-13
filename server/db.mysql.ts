@@ -1,17 +1,23 @@
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import { InsertUser, users } from "../drizzle/schema.postgres";
+import { eq, desc, and } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/mysql2";
+import { 
+  InsertUser, 
+  users, 
+  videos, 
+  InsertVideo,
+  telegramSessions,
+  InsertTelegramSession,
+  downloadQueue,
+  InsertDownloadQueue
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      const client = postgres(process.env.DATABASE_URL);
-      _db = drizzle(client);
+      _db = drizzle(process.env.DATABASE_URL);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -70,9 +76,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    // PostgreSQL upsert syntax
-    await db.insert(users).values(values).onConflictDoUpdate({
-      target: users.openId,
+    await db.insert(users).values(values).onDuplicateKeyUpdate({
       set: updateSet,
     });
   } catch (error) {
@@ -92,18 +96,6 @@ export async function getUserByOpenId(openId: string) {
 
   return result.length > 0 ? result[0] : undefined;
 }
-
-// TODO: add feature queries here as your schema grows.
-
-import { and, desc } from "drizzle-orm";
-import {
-  telegramSessions,
-  InsertTelegramSession,
-  videos,
-  InsertVideo,
-  downloadQueue,
-  InsertDownloadQueue,
-} from "../drizzle/schema.postgres";
 
 // Telegram Session Management
 export async function createTelegramSession(session: InsertTelegramSession) {
@@ -144,8 +136,8 @@ export async function createVideo(video: InsertVideo) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(videos).values(video).returning({ id: videos.id });
-  return result[0].id;
+  const result = await db.insert(videos).values(video);
+  return result[0].insertId;
 }
 
 export async function getUserVideos(userId: number) {
@@ -193,8 +185,8 @@ export async function createDownloadRequest(request: InsertDownloadQueue) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(downloadQueue).values(request).returning({ id: downloadQueue.id });
-  return result[0].id;
+  const result = await db.insert(downloadQueue).values(request);
+  return result[0].insertId;
 }
 
 export async function getDownloadRequest(requestId: number) {
