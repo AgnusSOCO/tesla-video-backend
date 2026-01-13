@@ -90,24 +90,42 @@ export const appRouter = router({
 
         // Get user from database to get openId
         const { getUserByOpenId } = await import("./db");
-        const user = await getUserByOpenId(`telegram_${session.telegramUserId}`);
+        const openId = `telegram_${session.telegramUserId}`;
+        const user = await getUserByOpenId(openId);
 
         if (!user) {
           throw new TRPCError({
             code: "NOT_FOUND",
-            message: "User not found in database",
+            message: `User not found in database with openId: ${openId}`,
           });
         }
 
+        console.log("[Login] Creating session for user:", {
+          openId: user.openId,
+          name: user.name,
+          telegramUsername: session.telegramUsername,
+        });
+
         // Create JWT session token using SDK
         const { sdk } = await import("./_core/sdk");
-        const sessionToken = await sdk.createSessionToken(user.openId, {
-          name: user.name || session.telegramUsername || "User",
+        const userName = user.name || session.telegramUsername || "Telegram User";
+        
+        console.log("[Login] Creating JWT with:", {
+          openId: user.openId,
+          name: userName,
         });
+        
+        const sessionToken = await sdk.createSessionToken(user.openId, {
+          name: userName,
+        });
+
+        console.log("[Login] JWT created, setting cookie");
 
         // Set session cookie with JWT token
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, sessionToken, cookieOptions);
+
+        console.log("[Login] Login successful for user:", user.openId);
 
         return { success: true, userId: session.userId };
       }),
