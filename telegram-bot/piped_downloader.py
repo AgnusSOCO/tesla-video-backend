@@ -11,27 +11,98 @@ import os
 import logging
 import asyncio
 import aiohttp
+import time
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# List of public Piped API instances for redundancy
-# These are rotated through if one fails
-PIPED_API_INSTANCES = [
+# Dynamic instances API endpoint
+PIPED_INSTANCES_API = "https://piped-instances.kavin.rocks/"
+
+# Fallback instances in case the API is down
+# These are updated periodically based on known working instances
+FALLBACK_PIPED_INSTANCES = [
+    "https://api.piped.private.coffee",
     "https://pipedapi.kavin.rocks",
-    "https://pipedapi.adminforge.de",
-    "https://api.piped.privacydev.net",
     "https://pipedapi.r4fo.com",
-    "https://pipedapi.moomoo.me",
-    "https://pipedapi.syncpundit.io",
-    "https://api-piped.mha.fi",
 ]
+
+# Cache for dynamic instances
+_cached_instances: List[str] = []
+_cache_timestamp: float = 0
+CACHE_TTL = 300  # 5 minutes cache
 
 # Download settings
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB chunks
 REQUEST_TIMEOUT = 30  # seconds for API requests
 DOWNLOAD_TIMEOUT = 600  # 10 minutes for video download
+
+
+async def fetch_piped_instances() -> List[str]:
+    """
+    Fetch list of working Piped API instances from the official instances API.
+    Returns instances sorted by uptime (most reliable first).
+    """
+    global _cached_instances, _cache_timestamp
+    
+    # Return cached instances if still valid
+    if _cached_instances and (time.time() - _cache_timestamp) < CACHE_TTL:
+        logger.info(f"Using cached Piped instances ({len(_cached_instances)} instances)")
+        return _cached_instances
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                PIPED_INSTANCES_API,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                if response.status != 200:
+                    logger.warning(f"Failed to fetch Piped instances: HTTP {response.status}")
+                    return FALLBACK_PIPED_INSTANCES
+                
+                instances_data = await response.json()
+                
+                # Filter and sort instances by uptime
+                working_instances = []
+                for instance in instances_data:
+                    api_url = instance.get("api_url")
+                    uptime_24h = instance.get("uptime_24h", 0)
+                    uptime_7d = instance.get("uptime_7d", 0)
+                    
+                    # Only include instances with reasonable uptime
+                    if api_url and uptime_24h >= 90:
+                        working_instances.append({
+                            "url": api_url,
+                            "uptime": (uptime_24h + uptime_7d) / 2,
+                            "name": instance.get("name", "Unknown")
+                        })
+                
+                # Sort by uptime (highest first)
+                working_instances.sort(key=lambda x: x["uptime"], reverse=True)
+                
+                # Extract just the URLs
+                instance_urls = [inst["url"] for inst in working_instances]
+                
+                if instance_urls:
+                    logger.info(f"Fetched {len(instance_urls)} working Piped instances")
+                    for inst in working_instances[:5]:
+                        logger.info(f"  - {inst['name']}: {inst['url']} (uptime: {inst['uptime']:.1f}%)")
+                    
+                    # Update cache
+                    _cached_instances = instance_urls
+                    _cache_timestamp = time.time()
+                    return instance_urls
+                else:
+                    logger.warning("No working instances found, using fallback")
+                    return FALLBACK_PIPED_INSTANCES
+                    
+    except asyncio.TimeoutError:
+        logger.warning("Timeout fetching Piped instances, using fallback")
+        return FALLBACK_PIPED_INSTANCES
+    except Exception as e:
+        logger.warning(f"Error fetching Piped instances: {e}, using fallback")
+        return FALLBACK_PIPED_INSTANCES
 
 
 @dataclass
@@ -60,7 +131,10 @@ async def get_video_info(video_id: str, instance_url: str = None) -> Optional[Vi
     Returns:
         VideoInfo object with stream URLs, or None if failed
     """
-    instances_to_try = [instance_url] if instance_url else PIPED_API_INSTANCES
+    if instance_url:
+        instances_to_try = [instance_url]
+    else:
+        instances_to_try = await fetch_piped_instances()
     
     for instance in instances_to_try:
         try:
