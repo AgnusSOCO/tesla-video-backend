@@ -88,10 +88,26 @@ export const appRouter = router({
           });
         }
 
-        // Set session cookie with user ID
+        // Get user from database to get openId
+        const { getUserByOpenId } = await import("./db");
+        const user = await getUserByOpenId(`telegram_${session.telegramUserId}`);
+
+        if (!user) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "User not found in database",
+          });
+        }
+
+        // Create JWT session token using SDK
+        const { sdk } = await import("./_core/sdk");
+        const sessionToken = await sdk.createSessionToken(user.openId, {
+          name: user.name || session.telegramUsername || "User",
+        });
+
+        // Set session cookie with JWT token
         const cookieOptions = getSessionCookieOptions(ctx.req);
-        const sessionData = JSON.stringify({ userId: session.userId });
-        ctx.res.cookie(COOKIE_NAME, sessionData, cookieOptions);
+        ctx.res.cookie(COOKIE_NAME, sessionToken, cookieOptions);
 
         return { success: true, userId: session.userId };
       }),
