@@ -49,8 +49,8 @@ def upload_to_s3(local_file_path: str, s3_key: str) -> str:
             AWS_S3_BUCKET,
             s3_key,
             ExtraArgs={
-                'ContentType': 'video/mp4',
-                'ACL': 'public-read'  # Make file publicly accessible
+                'ContentType': 'video/mp4'
+                # ACL removed - bucket policy handles public access
             }
         )
         
