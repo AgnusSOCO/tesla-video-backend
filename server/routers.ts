@@ -67,6 +67,34 @@ export const appRouter = router({
           telegramUsername: session.telegramUsername,
         };
       }),
+
+    // Login with verified Telegram session
+    loginWithTelegram: publicProcedure
+      .input(z.object({ authToken: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const session = await getTelegramSessionByToken(input.authToken);
+
+        if (!session || !session.verified || !session.userId) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Invalid or unverified auth token",
+          });
+        }
+
+        if (session.expiresAt < new Date()) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Auth token expired",
+          });
+        }
+
+        // Set session cookie with user ID
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        const sessionData = JSON.stringify({ userId: session.userId });
+        ctx.res.cookie(COOKIE_NAME, sessionData, cookieOptions);
+
+        return { success: true, userId: session.userId };
+      }),
   }),
 
   videos: router({
