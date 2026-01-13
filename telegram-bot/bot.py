@@ -14,7 +14,8 @@ from typing import Optional
 import qrcode
 from io import BytesIO
 
-import mysql.connector
+import psycopg2
+import psycopg2.extras
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -45,19 +46,11 @@ os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
 def get_db_connection():
     """Create database connection from DATABASE_URL"""
-    # Parse DATABASE_URL format: mysql://user:pass@host:port/database
-    match = re.match(r'mysql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', DATABASE_URL)
-    if not match:
-        raise ValueError("Invalid DATABASE_URL format")
-    
-    user, password, host, port, database = match.groups()
-    
-    return mysql.connector.connect(
-        host=host,
-        port=int(port),
-        user=user,
-        password=password,
-        database=database
+    # DATABASE_URL format: postgresql://user:pass@host:port/database
+    # Supabase format: postgresql://postgres.PROJECT_ID:PASSWORD@HOST:PORT/postgres
+    return psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=psycopg2.extras.RealDictCursor
     )
 
 
@@ -77,9 +70,85 @@ def extract_youtube_id(url: str) -> Optional[str]:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command"""
+    """Handle /start command - with optional auth token from QR code"""
     user = update.effective_user
     
+    # Check if auth token was provided (from QR code deep link)
+    if context.args and len(context.args) == 1:
+        auth_token = context.args[0]
+        logger.info(f"User {user.id} scanning QR code with token: {auth_token}")
+        
+        # Process authentication
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            
+            # Check if token exists and is not expired
+            cursor.execute(
+                "SELECT * FROM telegram_sessions WHERE authToken = %s AND expiresAt > NOW()",
+                (auth_token,)
+            )
+            session = cursor.fetchone()
+            
+            if not session:
+                await update.message.reply_text(
+                    "❌ Invalid or expired authentication token. Please generate a new QR code from the web app."
+                )
+                cursor.close()
+                conn.close()
+                return
+            
+            # Check if user exists, create if not
+            cursor.execute(
+                "SELECT * FROM users WHERE openId = %s",
+                (f"telegram_{user.id}",)
+            )
+            db_user = cursor.fetchone()
+            
+            if not db_user:
+                # Create new user
+                cursor.execute(
+                    """INSERT INTO users (openId, name, loginMethod, role) 
+                       VALUES (%s, %s, %s, %s) RETURNING id""",
+                    (f"telegram_{user.id}", user.full_name, "telegram", "user")
+                )
+                user_id = cursor.fetchone()['id']
+                conn.commit()
+                logger.info(f"Created new user {user_id} for Telegram user {user.id}")
+            else:
+                user_id = db_user['id']
+                logger.info(f"Found existing user {user_id} for Telegram user {user.id}")
+            
+            # Update session with Telegram user info
+            cursor.execute(
+                """UPDATE telegram_sessions 
+                   SET telegramUserId = %s, telegramUsername = %s, userId = %s, verified = TRUE
+                   WHERE authToken = %s""",
+                (user.id, user.username, user_id, auth_token)
+            )
+            conn.commit()
+            
+            cursor.close()
+            conn.close()
+            
+            logger.info(f"Authentication successful for user {user.id}")
+            
+            await update.message.reply_text(
+                f"✅ Authentication successful, {user.first_name}!\n\n"
+                "You can now return to the Tesla Video Player web app. "
+                "Your session is now linked to this Telegram account.\n\n"
+                "📹 Send me YouTube video URLs to start downloading!"
+            )
+            return
+            
+        except Exception as e:
+            logger.error(f"Auth error: {e}")
+            await update.message.reply_text(
+                "❌ Authentication failed. Please try again or contact support."
+            )
+            return
+    
+    # No auth token - show welcome message
     welcome_text = f"""
 👋 Welcome to Tesla Video Player, {user.first_name}!
 
@@ -95,7 +164,6 @@ This bot allows you to download YouTube videos and watch them in your Tesla brow
 /start - Show this welcome message
 /help - Get help and instructions
 /list - List your downloaded videos
-/auth <token> - Link your account (automatic via QR code)
 
 Send me any YouTube video URL to get started!
 """
@@ -184,11 +252,11 @@ async def auth_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Create new user
             cursor.execute(
                 """INSERT INTO users (openId, name, loginMethod, role) 
-                   VALUES (%s, %s, %s, %s)""",
+                   VALUES (%s, %s, %s, %s) RETURNING id""",
                 (f"telegram_{user.id}", user.full_name, "telegram", "user")
             )
+            user_id = cursor.fetchone()['id']
             conn.commit()
-            user_id = cursor.lastrowid
         else:
             user_id = db_user['id']
         
@@ -337,11 +405,11 @@ async def handle_youtube_url(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Add to download queue
         cursor.execute(
             """INSERT INTO download_queue (userId, youtubeUrl, youtubeId, status)
-               VALUES (%s, %s, %s, %s)""",
+               VALUES (%s, %s, %s, %s) RETURNING id""",
             (user_id, url, youtube_id, "pending")
         )
+        queue_id = cursor.fetchone()['id']
         conn.commit()
-        queue_id = cursor.lastrowid
         
         cursor.close()
         conn.close()
@@ -416,12 +484,12 @@ async def download_video(queue_id: int, user_id: int, url: str, youtube_id: str,
             """INSERT INTO videos 
                (userId, youtubeId, title, description, thumbnailUrl, duration, 
                 fileKey, fileUrl, fileSize, mimeType, status)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
             (user_id, youtube_id, title, description[:500] if description else None, 
              thumbnail, duration, file_key, file_url, file_size, "video/mp4", "ready")
         )
+        video_id = cursor.fetchone()['id']
         conn.commit()
-        video_id = cursor.lastrowid
         
         # Update queue
         cursor.execute(
