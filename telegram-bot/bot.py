@@ -84,7 +84,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Check if token exists and is not expired
             cursor.execute(
-                "SELECT * FROM telegram_sessions WHERE authToken = %s AND expiresAt > NOW()",
+                "SELECT * FROM telegram_sessions WHERE auth_token = %s AND expires_at > NOW()",
                 (auth_token,)
             )
             session = cursor.fetchone()
@@ -99,7 +99,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Check if user exists, create if not
             cursor.execute(
-                "SELECT * FROM users WHERE openId = %s",
+                "SELECT * FROM users WHERE open_id = %s",
                 (f"telegram_{user.id}",)
             )
             db_user = cursor.fetchone()
@@ -107,7 +107,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not db_user:
                 # Create new user
                 cursor.execute(
-                    """INSERT INTO users (openId, name, loginMethod, role) 
+                    """INSERT INTO users (open_id, name, login_method, role) 
                        VALUES (%s, %s, %s, %s) RETURNING id""",
                     (f"telegram_{user.id}", user.full_name, "telegram", "user")
                 )
@@ -121,8 +121,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Update session with Telegram user info
             cursor.execute(
                 """UPDATE telegram_sessions 
-                   SET telegramUserId = %s, telegramUsername = %s, userId = %s, verified = TRUE
-                   WHERE authToken = %s""",
+                   SET telegram_user_id = %s, telegram_username = %s, user_id = %s, verified = TRUE
+                   WHERE auth_token = %s""",
                 (user.id, user.username, user_id, auth_token)
             )
             conn.commit()
@@ -227,7 +227,7 @@ async def auth_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Check if token exists and is not expired
         cursor.execute(
-            "SELECT * FROM telegram_sessions WHERE authToken = %s AND expiresAt > NOW()",
+            "SELECT * FROM telegram_sessions WHERE auth_token = %s AND expires_at > NOW()",
             (auth_token,)
         )
         session = cursor.fetchone()
@@ -242,7 +242,7 @@ async def auth_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Check if user exists, create if not
         cursor.execute(
-            "SELECT * FROM users WHERE openId = %s",
+            "SELECT * FROM users WHERE open_id = %s",
             (f"telegram_{user.id}",)
         )
         db_user = cursor.fetchone()
@@ -250,7 +250,7 @@ async def auth_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not db_user:
             # Create new user
             cursor.execute(
-                """INSERT INTO users (openId, name, loginMethod, role) 
+                """INSERT INTO users (open_id, name, login_method, role) 
                    VALUES (%s, %s, %s, %s) RETURNING id""",
                 (f"telegram_{user.id}", user.full_name, "telegram", "user")
             )
@@ -262,8 +262,8 @@ async def auth_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Update session with Telegram user info
         cursor.execute(
             """UPDATE telegram_sessions 
-               SET telegramUserId = %s, telegramUsername = %s, userId = %s, verified = TRUE
-               WHERE authToken = %s""",
+               SET telegram_user_id = %s, telegram_username = %s, user_id = %s, verified = TRUE
+               WHERE auth_token = %s""",
             (user.id, user.username, user_id, auth_token)
         )
         conn.commit()
@@ -293,7 +293,7 @@ async def list_videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Get user ID
         cursor.execute(
-            "SELECT id FROM users WHERE openId = %s",
+            "SELECT id FROM users WHERE open_id = %s",
             (f"telegram_{user.id}",)
         )
         db_user = cursor.fetchone()
@@ -308,10 +308,10 @@ async def list_videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Get user's videos
         cursor.execute(
-            """SELECT id, title, duration, status, createdAt 
+            """SELECT id, title, duration, status, created_at 
                FROM videos 
-               WHERE userId = %s 
-               ORDER BY createdAt DESC 
+               WHERE user_id = %s 
+               ORDER BY created_at DESC 
                LIMIT 10""",
             (db_user['id'],)
         )
@@ -365,7 +365,7 @@ async def handle_youtube_url(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         # Get user ID
         cursor.execute(
-            "SELECT id FROM users WHERE openId = %s",
+            "SELECT id FROM users WHERE open_id = %s",
             (f"telegram_{user.id}",)
         )
         db_user = cursor.fetchone()
@@ -383,7 +383,7 @@ async def handle_youtube_url(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         # Check if video already exists
         cursor.execute(
-            "SELECT id, status FROM videos WHERE userId = %s AND youtubeId = %s",
+            "SELECT id, status FROM videos WHERE user_id = %s AND youtube_id = %s",
             (user_id, youtube_id)
         )
         existing_video = cursor.fetchone()
@@ -403,7 +403,7 @@ async def handle_youtube_url(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         # Add to download queue
         cursor.execute(
-            """INSERT INTO download_queue (userId, youtubeUrl, youtubeId, status)
+            """INSERT INTO download_queue (user_id, youtube_url, youtube_id, status)
                VALUES (%s, %s, %s, %s) RETURNING id""",
             (user_id, url, youtube_id, "pending")
         )
@@ -481,8 +481,8 @@ async def download_video(queue_id: int, user_id: int, url: str, youtube_id: str,
         # Create video record
         cursor.execute(
             """INSERT INTO videos 
-               (userId, youtubeId, title, description, thumbnailUrl, duration, 
-                fileKey, fileUrl, fileSize, mimeType, status)
+               (user_id, youtube_id, title, description, thumbnail_url, duration, 
+                file_key, file_url, file_size, mime_type, status)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
             (user_id, youtube_id, title, description[:500] if description else None, 
              thumbnail, duration, file_key, file_url, file_size, "video/mp4", "ready")
@@ -492,7 +492,7 @@ async def download_video(queue_id: int, user_id: int, url: str, youtube_id: str,
         
         # Update queue
         cursor.execute(
-            "UPDATE download_queue SET status = %s, videoId = %s WHERE id = %s",
+            "UPDATE download_queue SET status = %s, video_id = %s WHERE id = %s",
             ("completed", video_id, queue_id)
         )
         conn.commit()
