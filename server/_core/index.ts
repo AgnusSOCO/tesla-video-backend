@@ -6,7 +6,6 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
-import { serveStatic, setupVite } from "./vite";
 import { corsMiddleware } from "./cors";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -48,12 +47,23 @@ async function startServer() {
       createContext,
     })
   );
-  // development mode uses Vite, production mode uses static files
-  if (process.env.NODE_ENV === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
-  }
+  // Health check endpoint
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+  
+  // Root endpoint
+  app.get("/", (_req, res) => {
+    res.json({ 
+      message: "Tesla Video Player API",
+      version: "1.0.0",
+      endpoints: {
+        health: "/health",
+        api: "/api/trpc",
+        oauth: "/api/oauth/callback"
+      }
+    });
+  });
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
