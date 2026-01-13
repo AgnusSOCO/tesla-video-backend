@@ -190,10 +190,15 @@ Option A - YouTube:
 3. Send it to this bot
 
 Option B - File Sharing Link:
-1. Upload video to GoFile, Google Drive, Dropbox, etc.
+1. Upload video to Pixeldrain, Google Drive, or Dropbox
 2. Get the share link
 3. Send the link to this bot
 4. Supports files up to 2GB!
+
+**Recommended: Pixeldrain.com**
+• No account needed
+• Up to 10GB free
+• Files stored 90 days
 
 Option C - Direct Upload (small files):
 1. Send MP4 file directly to this bot

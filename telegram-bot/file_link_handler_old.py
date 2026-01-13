@@ -1,6 +1,6 @@
 """
 File link download handler for large video files
-Supports: Pixeldrain, Google Drive, Dropbox, direct links
+Supports: direct links, file.io, transfer.sh, Google Drive, etc.
 """
 import os
 import logging
@@ -10,6 +10,51 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
+
+
+async def get_gofile_download_url(url: str) -> str:
+    """Get direct download URL from GoFile share link"""
+    try:
+        # Extract content ID from URL
+        # Format: https://gofile.io/d/CONTENT_ID
+        content_id = url.split('/d/')[-1].split('?')[0]
+        
+        # Get account token (guest account)
+        async with httpx.AsyncClient() as client:
+            # GoFile API changed - use createAccount endpoint
+            token_response = await client.post('https://api.gofile.io/createAccount')
+            token_data = token_response.json()
+            
+            if token_data['status'] != 'ok':
+                raise Exception("Failed to get GoFile token")
+            
+            token = token_data['data']['token']
+            
+            # Get content info with token
+            content_response = await client.get(
+                f'https://api.gofile.io/contents/{content_id}',
+                params={'token': token}
+            )
+            content_data = content_response.json()
+            
+            if content_data['status'] != 'ok':
+                raise Exception("Failed to get GoFile content info")
+            
+            # Get the first file's download link
+            files = content_data['data']['children']
+            if not files:
+                raise Exception("No files found in GoFile link")
+            
+            # Get first file ID
+            first_file_id = list(files.keys())[0]
+            download_url = files[first_file_id]['link']
+            
+            return download_url
+            
+    except Exception as e:
+        logger.error(f"GoFile URL extraction failed: {e}")
+        # Return original URL as fallback
+        return url
 
 
 def extract_google_drive_id(url: str) -> str:
@@ -26,23 +71,8 @@ def extract_google_drive_id(url: str) -> str:
     return None
 
 
-def extract_pixeldrain_id(url: str) -> str:
-    """Extract Pixeldrain file ID from URL"""
-    # Format: https://pixeldrain.com/u/FILE_ID
-    match = re.search(r'pixeldrain\.com/u/([a-zA-Z0-9_-]+)', url)
-    if match:
-        return match.group(1)
-    return None
-
-
-def get_download_url(url: str) -> str:
+async def get_download_url(url: str) -> str:
     """Convert sharing URLs to direct download URLs"""
-    # Pixeldrain
-    if 'pixeldrain.com' in url:
-        file_id = extract_pixeldrain_id(url)
-        if file_id:
-            return f"https://pixeldrain.com/api/file/{file_id}"
-    
     # Google Drive
     if 'drive.google.com' in url:
         file_id = extract_google_drive_id(url)
@@ -52,6 +82,10 @@ def get_download_url(url: str) -> str:
     # Dropbox
     if 'dropbox.com' in url:
         return url.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '?dl=1')
+    
+    # GoFile - requires API call to get direct link
+    if 'gofile.io' in url:
+        return await get_gofile_download_url(url)
     
     # file.io, transfer.sh, and other direct links
     return url
@@ -67,7 +101,7 @@ async def handle_file_link(update: Update, context: ContextTypes.DEFAULT_TYPE, g
         return  # Not a URL, ignore
     
     # Check if it's a known file sharing service or direct video link
-    file_services = ['pixeldrain.com', 'file.io', 'transfer.sh', 'drive.google.com', 'dropbox.com']
+    file_services = ['file.io', 'transfer.sh', 'drive.google.com', 'dropbox.com', 'wetransfer.com', 'gofile.io']
     video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v']
     
     is_file_service = any(service in url.lower() for service in file_services)
@@ -104,27 +138,20 @@ async def handle_file_link(update: Update, context: ContextTypes.DEFAULT_TYPE, g
         )
         
         # Get direct download URL
-        download_url = get_download_url(url)
-        logger.info(f"Downloading from: {download_url}")
+        download_url = await get_download_url(url)
         
         # Download file
         async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
             # First, get file info
-            try:
-                head_response = await client.head(download_url)
-                file_size = int(head_response.headers.get('content-length', 0))
-            except:
-                file_size = 0
+            head_response = await client.head(download_url)
+            file_size = int(head_response.headers.get('content-length', 0))
             
-            # Download the file
-            response = await client.get(download_url)
-            
-            if response.status_code != 200:
-                raise Exception(f"Download failed with status {response.status_code}")
-            
-            # Get actual file size
             if file_size == 0:
+                # Try GET if HEAD doesn't work
+                response = await client.get(download_url, follow_redirects=True)
                 file_size = len(response.content)
+            else:
+                response = await client.get(download_url)
             
             # Check file size
             MAX_SIZE = 2 * 1024 * 1024 * 1024  # 2GB limit
@@ -146,7 +173,7 @@ async def handle_file_link(update: Update, context: ContextTypes.DEFAULT_TYPE, g
             # Save file
             filename = url.split('/')[-1].split('?')[0]
             if not any(filename.lower().endswith(ext) for ext in video_extensions):
-                filename = f"video_{user_id}_{abs(hash(url))}.mp4"
+                filename = f"video_{user_id}_{hash(url)}.mp4"
             
             local_path = os.path.join(DOWNLOAD_PATH, filename)
             
@@ -161,12 +188,12 @@ async def handle_file_link(update: Update, context: ContextTypes.DEFAULT_TYPE, g
             file_key = f"videos/{user_id}/{filename}"
             file_url = f"/api/videos/stream/{filename}"
             
-            # Create video record (youtubeId is NULL for non-YouTube videos)
+            # Create video record
             cursor.execute(
                 """INSERT INTO videos 
-                   (user_id, youtube_id, title, file_key, file_url, file_size, mime_type, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                (user_id, None, title, file_key, file_url, actual_size, "video/mp4", "ready")
+                   (user_id, title, file_key, file_url, file_size, mime_type, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (user_id, title, file_key, file_url, actual_size, "video/mp4", "ready")
             )
             video_id = cursor.fetchone()['id']
             conn.commit()
