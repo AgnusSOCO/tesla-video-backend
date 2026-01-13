@@ -26,6 +26,7 @@ from telegram.ext import (
 )
 import yt_dlp
 from video_upload_handler import handle_video_upload
+from file_link_handler import handle_file_link
 
 # Configure logging
 logging.basicConfig(
@@ -188,10 +189,15 @@ Option A - YouTube:
 2. Copy the video URL
 3. Send it to this bot
 
-Option B - Direct Upload:
-1. Download video on your phone (any app)
-2. Send the MP4 file directly to this bot
-3. Max file size: 500MB
+Option B - File Sharing Link:
+1. Upload video to GoFile, Google Drive, Dropbox, etc.
+2. Get the share link
+3. Send the link to this bot
+4. Supports files up to 2GB!
+
+Option C - Direct Upload (small files):
+1. Send MP4 file directly to this bot
+2. Max file size: 20MB (Telegram limit)
 
 **Step 3: Watch in Tesla**
 1. Open the web app in your Tesla browser
@@ -581,6 +587,17 @@ def main():
         MessageHandler(
             filters.VIDEO | (filters.Document.VIDEO),
             video_upload_wrapper
+        )
+    )
+    
+    # Handle file sharing links (GoFile, Google Drive, etc.)
+    async def file_link_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await handle_file_link(update, context, get_db_connection, DOWNLOAD_PATH, WEB_APP_URL)
+    
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND & ~filters.Regex(r'(youtube\.com|youtu\.be)'),
+            file_link_wrapper
         )
     )
     

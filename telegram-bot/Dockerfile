@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy bot code and cookies
 COPY bot.py .
 COPY video_upload_handler.py .
+COPY file_link_handler.py .
 COPY youtube_cookies.txt .
 
 # Create directory for video downloads
