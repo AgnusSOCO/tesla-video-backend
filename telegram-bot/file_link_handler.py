@@ -44,11 +44,12 @@ def get_download_url(url: str) -> str:
         if file_id:
             return f"https://pixeldrain.com/api/file/{file_id}"
     
-    # Google Drive
+    # Google Drive - use multiple download methods
     if 'drive.google.com' in url:
         file_id = extract_google_drive_id(url)
         if file_id:
-            return f"https://drive.google.com/uc?export=download&id={file_id}"
+            # For large files, use the confirm parameter to bypass virus scan
+            return f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
     
     # Dropbox
     if 'dropbox.com' in url:
@@ -118,7 +119,16 @@ async def handle_file_link(update: Update, context: ContextTypes.DEFAULT_TYPE, g
                 file_size = 0
             
             # Download the file
-            response = await client.get(download_url)
+            response = await client.get(download_url, follow_redirects=True)
+            
+            # Check if Google Drive returned HTML (virus scan page)
+            content_type = response.headers.get('content-type', '')
+            if 'text/html' in content_type and 'drive.google.com' in url:
+                raise Exception(
+                    "Google Drive requires manual download for this file. "
+                    "Please download it manually and send the file directly to the bot, "
+                    "or use Pixeldrain (https://pixeldrain.com) instead."
+                )
             
             if response.status_code != 200:
                 raise Exception(f"Download failed with status {response.status_code}")
