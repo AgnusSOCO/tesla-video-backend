@@ -1,8 +1,10 @@
 FROM python:3.12-slim
 
-# Install ffmpeg for video processing
+# Install ffmpeg for video processing and Node.js for PO token generation
 RUN apt-get update && \
-    apt-get install -y ffmpeg && \
+    apt-get install -y ffmpeg curl && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
