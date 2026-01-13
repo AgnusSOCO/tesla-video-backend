@@ -451,13 +451,19 @@ async def handle_youtube_url(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 def download_video_with_ytdlp_sync(youtube_id: str, url: str) -> tuple:
     """
-    Download video using yt-dlp (fallback method) - synchronous version
+    Download video using yt-dlp with PO Token provider plugin - synchronous version
+    
+    Uses the bgutil-ytdlp-pot-provider plugin to generate PO tokens automatically,
+    which bypasses YouTube's "Sign in to confirm you're not a bot" restriction.
     
     Returns:
         Tuple of (downloaded_file_path, title, description, duration, thumbnail) or raises exception
     """
     output_path = os.path.join(DOWNLOAD_PATH, f"{youtube_id}.%(ext)s")
     cookies_path = os.path.join(os.path.dirname(__file__), 'youtube_cookies.txt')
+    
+    # Get PO token provider server URL from environment (if using HTTP server mode)
+    pot_provider_url = os.getenv("POT_PROVIDER_URL")
     
     ydl_opts = {
         'outtmpl': output_path,
@@ -466,9 +472,26 @@ def download_video_with_ytdlp_sync(youtube_id: str, url: str) -> tuple:
         'cookiefile': cookies_path if os.path.exists(cookies_path) else None,
         'verbose': True,
         'listformats': False,
+        # Use mweb client which works well with PO tokens
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['mweb'],
+            }
+        },
+        # Prefer MP4 format for Tesla browser compatibility
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'merge_output_format': 'mp4',
     }
     
-    logger.info(f"yt-dlp fallback: Using cookies file: {cookies_path if os.path.exists(cookies_path) else 'None'}")
+    # If PO token provider server is configured, set the environment variable
+    if pot_provider_url:
+        os.environ['BGUTIL_POT_PROVIDER_HTTP_BASE'] = pot_provider_url
+        logger.info(f"yt-dlp: Using PO token provider at {pot_provider_url}")
+    else:
+        logger.info("yt-dlp: No POT_PROVIDER_URL set, using built-in PO token generation")
+    
+    logger.info(f"yt-dlp: Using cookies file: {cookies_path if os.path.exists(cookies_path) else 'None'}")
+    logger.info(f"yt-dlp: Using player_client=mweb with PO token support")
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
