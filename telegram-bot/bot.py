@@ -25,6 +25,7 @@ from telegram.ext import (
     filters,
 )
 import yt_dlp
+from video_upload_handler import handle_video_upload
 
 # Configure logging
 logging.basicConfig(
@@ -181,11 +182,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 3. Scan it with your phone's Telegram app
 4. Click the link to authenticate
 
-**Step 2: Download Videos**
+**Step 2: Add Videos**
+Option A - YouTube:
 1. Find a YouTube video you want to watch
 2. Copy the video URL
 3. Send it to this bot
-4. Wait for the download to complete
+
+Option B - Direct Upload:
+1. Download video on your phone (any app)
+2. Send the MP4 file directly to this bot
+3. Max file size: 500MB
 
 **Step 3: Watch in Tesla**
 1. Open the web app in your Tesla browser
@@ -564,6 +570,17 @@ def main():
         MessageHandler(
             filters.TEXT & ~filters.COMMAND & filters.Regex(r'(youtube\.com|youtu\.be)'),
             handle_youtube_url
+        )
+    )
+    
+    # Handle direct video uploads
+    async def video_upload_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await handle_video_upload(update, context, get_db_connection, DOWNLOAD_PATH, WEB_APP_URL)
+    
+    application.add_handler(
+        MessageHandler(
+            filters.VIDEO | (filters.Document.VIDEO),
+            video_upload_wrapper
         )
     )
     
