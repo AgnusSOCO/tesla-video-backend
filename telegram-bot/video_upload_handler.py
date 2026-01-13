@@ -77,9 +77,7 @@ async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         # Upload to S3 storage
         await status_message.edit_text(
-            f"☁️ Uploading to cloud storage...
-
-"
+            f"☁️ Uploading to cloud storage...\n\n"
             f"Size: {file_size / (1024*1024):.1f}MB"
         )
         

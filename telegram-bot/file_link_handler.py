@@ -160,9 +160,7 @@ async def handle_file_link(update: Update, context: ContextTypes.DEFAULT_TYPE, g
             
             # Upload to S3 storage
             await status_message.edit_text(
-                f"☁️ Uploading to cloud storage...
-
-"
+                f"☁️ Uploading to cloud storage...\n\n"
                 f"Size: {actual_size / (1024*1024):.1f}MB"
             )
             
