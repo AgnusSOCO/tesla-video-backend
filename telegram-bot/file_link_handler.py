@@ -8,6 +8,7 @@ import re
 import httpx
 from telegram import Update
 from telegram.ext import ContextTypes
+from s3_upload import upload_to_s3
 
 logger = logging.getLogger(__name__)
 
@@ -157,9 +158,27 @@ async def handle_file_link(update: Update, context: ContextTypes.DEFAULT_TYPE, g
             title = filename.rsplit('.', 1)[0]
             actual_size = os.path.getsize(local_path)
             
-            # TODO: Upload to S3 storage
+            # Upload to S3 storage
+            await status_message.edit_text(
+                f"☁️ Uploading to cloud storage...
+
+"
+                f"Size: {actual_size / (1024*1024):.1f}MB"
+            )
+            
             file_key = f"videos/{user_id}/{filename}"
-            file_url = f"/api/videos/stream/{filename}"
+            try:
+                file_url = upload_to_s3(local_path, file_key)
+                logger.info(f"Video uploaded to S3: {file_url}")
+                
+                # Delete local file after successful upload
+                os.remove(local_path)
+                logger.info(f"Deleted local file: {local_path}")
+            except Exception as e:
+                logger.error(f"S3 upload failed: {e}")
+                # Fallback to local streaming if S3 fails
+                file_url = f"/api/videos/stream/{filename}"
+                logger.warning(f"Using local streaming as fallback: {file_url}")
             
             # Create video record (youtubeId is NULL for non-YouTube videos)
             cursor.execute(

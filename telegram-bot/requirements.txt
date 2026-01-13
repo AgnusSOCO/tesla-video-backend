@@ -3,3 +3,4 @@ yt-dlp==2024.12.13
 qrcode==8.0
 Pillow==11.0.0
 psycopg[binary]==3.2.3
+boto3==1.35.76
