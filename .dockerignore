@@ -1,0 +1,59 @@
+# Node modules (will be installed in container)
+node_modules/
+.pnpm-store/
+
+# Build outputs (will be built in container)
+dist/
+
+# Client files (not needed for backend)
+client/
+
+# Telegram bot (separate deployment)
+telegram-bot/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Documentation
+*.md
+docs/
+DEPLOYMENT*.md
+QUICKSTART.md
+ENV_VARIABLES.md
+SUPABASE_CONNECTION.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Test files
+*.test.ts
+*.test.js
+**/__tests__/
+coverage/
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Railway config (not needed in container)
+railway.json
+nixpacks.toml
+.railwayignore
+
+# Vercel config (not needed for backend)
+vercel.json
