@@ -80,7 +80,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Process authentication
         try:
             conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
+            cursor = conn.cursor()
             
             # Check if token exists and is not expired
             cursor.execute(
@@ -223,7 +223,7 @@ async def auth_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         
         # Check if token exists and is not expired
         cursor.execute(
@@ -289,7 +289,7 @@ async def list_videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         
         # Get user ID
         cursor.execute(
@@ -361,7 +361,7 @@ async def handle_youtube_url(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         
         # Get user ID
         cursor.execute(
@@ -436,7 +436,7 @@ async def download_video(queue_id: int, user_id: int, url: str, youtube_id: str,
     """Download video using yt-dlp"""
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         
         # Update queue status
         cursor.execute(
