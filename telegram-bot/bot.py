@@ -14,8 +14,7 @@ from typing import Optional
 import qrcode
 from io import BytesIO
 
-import psycopg2
-import psycopg2.extras
+import psycopg
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -48,9 +47,9 @@ def get_db_connection():
     """Create database connection from DATABASE_URL"""
     # DATABASE_URL format: postgresql://user:pass@host:port/database
     # Supabase format: postgresql://postgres.PROJECT_ID:PASSWORD@HOST:PORT/postgres
-    return psycopg2.connect(
+    return psycopg.connect(
         DATABASE_URL,
-        cursor_factory=psycopg2.extras.RealDictCursor
+        row_factory=psycopg.rows.dict_row
     )
 
 
