@@ -43,7 +43,7 @@ export type InsertTelegramSession = typeof telegramSessions.$inferInsert;
 export const videos = mysqlTable("videos", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id),
-  youtubeId: varchar("youtubeId", { length: 64 }).notNull(),
+  youtubeId: varchar("youtubeId", { length: 64 }), // Optional - only for YouTube videos
   title: text("title").notNull(),
   description: text("description"),
   thumbnailUrl: text("thumbnailUrl"),
@@ -68,7 +68,7 @@ export const downloadQueue = mysqlTable("download_queue", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id),
   youtubeUrl: text("youtubeUrl").notNull(),
-  youtubeId: varchar("youtubeId", { length: 64 }).notNull(),
+  youtubeId: varchar("youtubeId", { length: 64 }), // Optional - only for YouTube videos
   status: mysqlEnum("status", ["pending", "processing", "completed", "failed"]).default("pending").notNull(),
   errorMessage: text("errorMessage"),
   videoId: int("videoId").references(() => videos.id),

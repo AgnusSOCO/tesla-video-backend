@@ -21,7 +21,8 @@ async def get_gofile_download_url(url: str) -> str:
         
         # Get account token (guest account)
         async with httpx.AsyncClient() as client:
-            token_response = await client.get('https://api.gofile.io/accounts')
+            # GoFile API changed - use createAccount endpoint
+            token_response = await client.post('https://api.gofile.io/createAccount')
             token_data = token_response.json()
             
             if token_data['status'] != 'ok':
