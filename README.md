@@ -4,12 +4,19 @@ Backend API server for Tesla Video Player. Handles video management, Telegram au
 
 ## Tech Stack
 
+### Backend API
 - **Node.js 22** with TypeScript
 - **Express** - Web server
 - **tRPC** - Type-safe API
 - **Drizzle ORM** - Database ORM
 - **PostgreSQL** (Supabase) - Database
 - **Zod** - Schema validation
+
+### Telegram Bot
+- **Python 3.11+**
+- **python-telegram-bot** - Telegram bot framework
+- **yt-dlp** - YouTube video downloader
+- **qrcode** - QR code generation
 
 ## Environment Variables
 
@@ -38,6 +45,8 @@ OWNER_NAME=your-name
 
 ## Development
 
+### Backend API
+
 ```bash
 # Install dependencies
 npm install
@@ -48,6 +57,26 @@ npm run db:push
 # Start development server
 npm run dev
 ```
+
+### Telegram Bot
+
+```bash
+# Navigate to bot directory
+cd telegram-bot
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Set environment variables
+export TELEGRAM_BOT_TOKEN=your-bot-token
+export DATABASE_URL=your-database-url
+export API_URL=http://localhost:3000
+
+# Run the bot
+python bot.py
+```
+
+See `telegram-bot/README.md` for detailed setup instructions.
 
 ## Production Deployment
 
