@@ -453,12 +453,17 @@ async def download_video(queue_id: int, user_id: int, url: str, youtube_id: str,
         
         # Configure yt-dlp
         output_path = os.path.join(DOWNLOAD_PATH, f"{youtube_id}.%(ext)s")
+        cookies_path = os.path.join(os.path.dirname(__file__), 'youtube_cookies.txt')
+        
         ydl_opts = {
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': output_path,
             'quiet': False,
             'no_warnings': False,
+            'cookiefile': cookies_path if os.path.exists(cookies_path) else None,
         }
+        
+        logger.info(f"Using cookies file: {cookies_path if os.path.exists(cookies_path) else 'None'}")
         
         # Download video and get info
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

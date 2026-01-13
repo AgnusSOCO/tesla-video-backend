@@ -12,8 +12,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy bot code
+# Copy bot code and cookies
 COPY bot.py .
+COPY youtube_cookies.txt .
 
 # Create directory for video downloads
 RUN mkdir -p /tmp/tesla-videos
