@@ -17,6 +17,7 @@ COPY bot.py .
 COPY video_upload_handler.py .
 COPY file_link_handler.py .
 COPY s3_upload.py .
+COPY piped_downloader.py .
 COPY youtube_cookies.txt .
 
 # Create directory for video downloads
