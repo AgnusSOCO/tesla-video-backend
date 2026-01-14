@@ -139,7 +139,10 @@ def get_download_url(url: str) -> str:
         return url.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '?dl=1').replace('&dl=0', '&dl=1')
     
     # Catbox - https://catbox.moe/xxx.mp4 or https://files.catbox.moe/xxx.mp4
-    if 'catbox.moe' in url and 'litter' not in url:
+    # files.catbox.moe URLs are already direct download links
+    if 'files.catbox.moe' in url:
+        return url
+    if 'catbox.moe' in url and 'litter' not in url and 'files.' not in url:
         file_id = extract_catbox_id(url)
         if file_id:
             return f"https://files.catbox.moe/{file_id}"
@@ -266,6 +269,7 @@ async def handle_file_link(update: Update, context: ContextTypes.DEFAULT_TYPE, g
         'dropbox.com',
         'gofile.io',
         'catbox.moe',
+        'files.catbox.moe',
         'litter.catbox.moe',
         'mediafire.com',
         'krakenfiles.com',
